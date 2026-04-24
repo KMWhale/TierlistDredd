@@ -294,9 +294,9 @@ planeEl.addEventListener('drop',e=>{
 function addToPlaneCenter(src,name,gEl){const SIZE=60;addToPlane(src,name,BASE_W/2-SIZE/2,BASE_H/2-SIZE/2,SIZE,gEl);}
 
 /* ══════════════ ITEM NO PLANO ══════════════ */
-function addToPlane(src,name,px,py,size,galleryItemEl){
+function addToPlane(src,name,px,py,size,galleryItemEl,forceId){
   px=Math.max(0,Math.min(BASE_W-size,px)); py=Math.max(0,Math.min(BASE_H-size,py));
-  const id='item-'+(S.nextId++);
+  const id=forceId || ('item-'+(S.nextId++));
   const wrap=document.createElement('div');
   wrap.className='plane-item'; wrap.id=id;
   wrap.style.cssText=`left:${px}px;top:${py}px;width:${size}px;height:${size}px;cursor:${isEditor()?'grab':'default'}`;
@@ -351,6 +351,10 @@ function addToPlane(src,name,px,py,size,galleryItemEl){
   }
 
   selectItem(id); updateItemsList(); updateCoordPanel(id);
+  
+  if (typeof firebaseUpdateItem === 'function') {
+    firebaseUpdateItem(id, S.items[id]);
+  }
 }
 
 /* ── Mousemove / mouseup ─────────────────────────────────────── */
@@ -364,7 +368,16 @@ document.addEventListener('mousemove',e=>{
     let ny=Math.max(0,Math.min(BASE_H-item.size,S.dragStartPy+dy));
     item.px=nx; item.py=ny; item.el.style.left=nx+'px'; item.el.style.top=ny+'px';
     const co=pixelToCoord(nx+item.size/2,ny+item.size/2); item.x=co.x; item.y=co.y;
-    updateCoordPanel(S.dragging); showTooltip(e.clientX,e.clientY,S.dragging); return;
+    updateCoordPanel(S.dragging); showTooltip(e.clientX,e.clientY,S.dragging); 
+    
+    // Throttle the firebase update during drag
+    if (typeof firebaseUpdateItem === 'function') {
+      if (!item._lastFbUpdate || Date.now() - item._lastFbUpdate > 50) {
+        firebaseUpdateItem(S.dragging, item);
+        item._lastFbUpdate = Date.now();
+      }
+    }
+    return;
   }
   if(S.fsDragging){
     const{wrap,id,fsScale}=S.fsDragging;
@@ -381,7 +394,14 @@ document.addEventListener('mousemove',e=>{
 document.addEventListener('mouseup',()=>{
   if(S.panning){S.panning=false;vpScroll.style.cursor=S.spaceHeld?'grab':'';}
   if(S.fsPanning){S.fsPanning=false;fsInner.style.cursor=S.spaceHeld?'grab':'';}
-  if(S.dragging){const item=S.items[S.dragging];if(item){item.el.style.cursor='grab';}document.body.style.userSelect='';hideTooltip();updateItemsList();S.dragging=null;}
+  if(S.dragging){
+    const item=S.items[S.dragging];
+    if(item){
+      item.el.style.cursor='grab';
+      if (typeof firebaseUpdateItem === 'function') firebaseUpdateItem(S.dragging, item);
+    }
+    document.body.style.userSelect='';hideTooltip();updateItemsList();S.dragging=null;
+  }
   if(S.fsDragging){document.body.style.userSelect='';syncFStoPlane();S.fsDragging=null;}
 });
 
@@ -417,8 +437,11 @@ function resizeItem(id,delta){
   const co=pixelToCoord(item.px+ns/2,item.py+ns/2); item.x=co.x; item.y=co.y;
   const lbl=document.getElementById('sz-'+id); if(lbl)lbl.textContent=ns;
   updateCoordPanel(id);
+  if (typeof firebaseUpdateItem === 'function') {
+    firebaseUpdateItem(id, item);
+  }
 }
-function removeItem(id){
+function removeItem(id, skipFirebase){
   const item=S.items[id]; if(!item)return;
   item.el.remove();
   const fsEl=fsPlane.querySelector(`[data-src-id="${id}"]`); if(fsEl)fsEl.remove();
@@ -426,6 +449,9 @@ function removeItem(id){
   delete S.items[id];
   if(S.selectedId===id){S.selectedId=null;clearCoordPanel();}
   updateItemsList();
+  if (!skipFirebase && typeof firebaseRemoveItem === 'function') {
+    firebaseRemoveItem(id);
+  }
 }
 function updateCoordPanel(id){
   const item=S.items[id]; if(!item){clearCoordPanel();return;}
@@ -461,6 +487,7 @@ function resetPlane(){
   if(!isAdmin()){showNotif('🔒 Sem permissão','err');return;}
   if(!confirm('Limpar todo o plano?'))return;
   Object.keys(S.items).forEach(id=>removeItem(id));
+  if (typeof firebaseClearPlane === 'function') firebaseClearPlane();
   showNotif('Plano limpo');
 }
 
