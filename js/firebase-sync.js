@@ -21,10 +21,19 @@ const db = firebase.database();
 
 let isSyncingFromFirebase = false;
 
-// Função para escutar mudanças no banco e atualizar a tela
 function listenToFirebase() {
   const boardRef = db.ref('board/items');
   
+  // Testando a conexão
+  const connectedRef = db.ref('.info/connected');
+  connectedRef.on('value', (snap) => {
+    if (snap.val() === true) {
+      console.log('Firebase conectado com sucesso!');
+    } else {
+      console.log('Firebase desconectado.');
+    }
+  });
+
   boardRef.on('value', (snapshot) => {
     const data = snapshot.val();
     
@@ -101,7 +110,13 @@ function listenToFirebase() {
       updateItemsList();
     }
     
+    
     isSyncingFromFirebase = false;
+  }, (error) => {
+    console.error('Erro de leitura no Firebase:', error);
+    if (typeof showNotif === 'function') {
+      showNotif('Erro Firebase: ' + error.message, 'err');
+    }
   });
 }
 
@@ -116,6 +131,9 @@ function firebaseUpdateItem(id, item) {
     px: item.px,
     py: item.py,
     size: item.size
+  }).catch(error => {
+    console.error('Erro ao salvar item no Firebase:', error);
+    if (typeof showNotif === 'function') showNotif('Erro ao salvar no Firebase', 'err');
   });
 }
 
